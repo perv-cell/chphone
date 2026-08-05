@@ -1,3 +1,4 @@
+from fastapi import Depends
 from repositories.number_repo import NumberRepository
 from service.number import NumberService
 
@@ -12,7 +13,7 @@ def get_number_repository() -> NumberRepository:
     return _repo_instance
 
 def get_number_service(
-    repo: NumberRepository = get_number_repository()
+    repo: NumberRepository = Depends(get_number_repository),
 ) -> NumberService:
     """Провайдер сервиса (внедряет репозиторий)"""
     return NumberService(repo)
