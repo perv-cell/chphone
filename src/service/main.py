@@ -6,6 +6,7 @@ from config import get_settings
 import logging.config
 from utils.handlers.middlewares import LoggingMiddleware
 from utils.logger.config_logger import LOG_CONFIG
+from service.shedular.proxy import  lifespan
 
 logging.config.dictConfig(LOG_CONFIG)
 logger =  logging.getLogger()
@@ -13,6 +14,7 @@ logger =  logging.getLogger()
 settings = get_settings()
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.APP_NAME,
     debug=settings.DEBUG,
     version=settings.APP_VERSION

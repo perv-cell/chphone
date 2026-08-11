@@ -1,7 +1,7 @@
 from route.repositories.database.common import CommonRepository
 from concurrent.futures import ThreadPoolExecutor
 import aiohttp
-from typing import List,Dict
+from typing import List,Dict, Optional
 from enum import Enum
 from schemas.object_search import AnswerProxy ,Protocol
 
@@ -26,7 +26,7 @@ class CommonService:
                 "type": "socks4,socks5",
             }
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(5)) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(10)) as session:
             async with session.get("https://api.best-proxies.ru/proxylist.json", params=params) as response:
                 data = await response.json()
                 result = []
@@ -61,6 +61,6 @@ class CommonService:
                         result.append(param_proxy)
                 return result
 
-    async def save_works_proxys(self, proxys: List[AnswerProxy]):
-        proxys = await self.checking_work_proxy()
-        pipeline = await self.repo.add_proxies_batch(proxys)
+    async def save_works_proxys(self, new_proxys: Optional[List[AnswerProxy]] = None):
+        if new_proxys is not None:
+            pipeline = await self.repo.add_proxies_batch(new_proxys)
