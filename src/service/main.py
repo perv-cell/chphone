@@ -1,5 +1,7 @@
 from fastapi import FastAPI, status
-from route.number import router as number_router
+from route.registration_info import router as number_router
+from route.search_pers_data import router as search_data
+from route.common import router as common_router
 from config import get_settings
 import logging.config
 from utils.handlers.middlewares import LoggingMiddleware
@@ -19,7 +21,8 @@ app.middleware("http")(
     LoggingMiddleware()
 )
 app.include_router(number_router)
-
+app.include_router(search_data)
+app.include_router(common_router)
 @app.get("/")
 async def root():
     return {

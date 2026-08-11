@@ -1,18 +1,18 @@
-from fastapi import HTTPException, status
 from fastapi.param_functions import Depends
-from repositories.number_repo import NumberRepository, get_db
-from schemas.number import NumberSearch, NumberResponse
+from route.repositories.database.number import NumberRepository, get_db
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from repositories.models import ServiceType
+from route.repositories.models import ServiceType
 from typing import Dict, Optional, Any, List
 import datetime
-from repositories.models import PhoneNumber
+from route.repositories.models import PhoneNumber
 from sqlalchemy.ext.asyncio import AsyncSession
-from schemas.number import NumberSearch
 import logging
-import json
 import aiohttp
+from selenium import webdriver
+from service.services.utils.services.restore_service import VKRestoreService
+from service.services.utils.services.session_manager import VKSessionManager
+import re
 
 logger = logging.getLogger("service.number")
 
@@ -25,7 +25,6 @@ class NumberService:
         self.repo = repo
         self.executor = ThreadPoolExecutor(max_workers=10)
 
-        # Список поддерживаемых сервисов с их проверялками
         self.service_checkers = {
             ServiceType.VKONTAKTE: self._check_vkontakte,
             ServiceType.ODNOKLASSNIKI: self._check_odnoklassniki,
@@ -39,144 +38,151 @@ class NumberService:
             ServiceType.SIGNAL: self._check_signal,
         }
 
-    # ============= ОСНОВНЫЕ ФУНКЦИИ =============
 
-    async def check_phone_registration(self, number_search:NumberSearch):
-        url = "https://api.vk.ru/method/restore.phoneCheck"
+    async def check_phone_registration(self, phone: str) -> dict:
+            """
+            Проверка регистрации номера в VK (публичный эндпоинт, без авторизации)
+            """
+            # Публичный URL для проверки номера
+            url = "https://api.vk.ru/method/account.lookupContacts"
 
-        payload = 'lang=0&v=5.83&app_id=0&device_id=JBuFiTjz5kamwggP8z2xB&unauth_id=3326488608&restore_session_id=1GgQIzceW9oA3N12bDNhb0pIApLHDVdDBZs6cz054Az&history%5B%5D=reset&platform=vkcom&phone=%2B79229018613&vkui=1'
-        headers = {
-          'Host': 'api.vk.ru',
-          'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0',
-          'Accept': '*/*',
-          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-          'Accept-Encoding': 'gzip, deflate, br, zstd',
-          'Referer': 'https://id.vk.ru/',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Origin': 'https://id.vk.ru',
-          'Connection': 'keep-alive',
-          'Cookie': 'remixlang=0; remixstlid=9050071956940505016_j1TAfZRvQB13HoE1DK4OptlIgEByv5BRGkSuFMQzVsz; remixuas=M2Q3MzFjNTIzMjM4ZjVjYzg5YWIwMTEw; remixstid=1104520118_bggs2j0OS68ApJ3rnwJcgqzgdxDdzriWDThm16Uh0zL; remixuacck=e6c9eb93c151384944; remixsuc=2%3A; remixnttpid=vk1.a.oIhn8mJfOMeOWIoELOLJehs7u0W_Idmg_YR06rDBY0MkYnUHa4_-15uA4ohGix5E2sh2SxMQXHdc1ry4-xubGTK_wrH8v_hxeTcMEA97JvB6XCOh8V6Q6hEo8lHI_u_5-ubCSb8TMHOTSPgrK3P7w9FIbXkF4iwPAXf3LFLtBUTPVwlRmeWq65J4sBNwmLjE; remixua=191%7C-1%7C333%7C3201899776; remixscreen_width=1600; remixscreen_height=900; remixscreen_dpr=1.2; remixscreen_depth=24; remixscreen_winzoom=1; remixdark_color_scheme=0; remixcolor_scheme_mode=auto; remixdt=0; remixsf=1; vkm_one_column_mode=1; remixseenads=2; remixscreen_orient=1; remixgp=9a140e9a523a56be6aacb1b9bc40c3ad; httoken=EfrR03fgFzLz9QFmZADcCOGd14VoYxveIGOOjqDeyU2zlp4xppbJay1IederpYdi_iULoGkvSImGzLIHXyi_Z0A4Vw6CInA_Lj8jD6aDDjrbbA3ZPBXJhTMDdTanPzC-3B0; remixlgck=4aee85adbf56404f4c; tmr_lvid=cd7833d252b84c7caf4b5e74dba04921; tmr_lvidTS=1785915853739; domain_sid=JTvHyvnkU7hLscmAwo8wr%3A1785915854573; remixnreg_sid=bb8f5c26a86f84f07a6a62e03ecf99a7',
-          'Sec-Fetch-Dest': 'empty',
-          'Sec-Fetch-Mode': 'cors',
-          'Sec-Fetch-Site': 'same-site',
-          'host': 'api.vk.ru'
-        }
-        cookies = {
-            "remixlang": "0",
-            "remixstlid": "9050071956940505016_j1TAfZRvQB13HoE1DK4OptlIgEByv5BRGkSuFMQzVsz",
-            "remixuas": "M2Q3MzFjNTIzMjM4ZjVjYzg5YWIwMTEw",
-            "remixstid": "1104520118_bggs2j0OS68ApJ3rnwJcgqzgdxDdzriWDThm16Uh0zL",
-            "remixuacck": "e6c9eb93c151384944",
-            "remixsuc": "2%3A",
-            "remixnttpid": "vk1.a.oIhn8mJfOMeOWIoELOLJehs7u0W_Idmg_YR06rDBY0MkYnUHa4_-15uA4ohGix5E2sh2SxMQXHdc1ry4-xubGTK_wrH8v_hxeTcMEA97JvB6XCOh8V6Q6hEo8lHI_u_5-ubCSb8TMHOTSPgrK3P7w9FIbXkF4iwPAXf3LFLtBUTPVwlRmeWq65J4sBNwmLjE",
-            "remixua": "191%7C-1%7C333%7C3201899776",
-            "remixscreen_width": "1600",
-            "remixscreen_height": "900",
-            "remixscreen_dpr": "1.2",
-            "remixscreen_depth": "24",
-            "remixscreen_winzoom": "1",
-            "remixdark_color_scheme": "0",
-            "remixcolor_scheme_mode": "auto",
-            "remixdt": "0",
-            "remixsf": "1",
-            "vkm_one_column_mode": "1",
-            "remixseenads": "2",
-            "remixscreen_orient": "1",
-            "remixgp": "9a140e9a523a56be6aacb1b9bc40c3ad",
-            "httoken": "EfrR03fgFzLz9QFmZADcCOGd14VoYxveIGOOjqDeyU2zlp4xppbJay1IederpYdi_iULoGkvSImGzLIHXyi_Z0A4Vw6CInA_Lj8jD6aDDjrbbA3ZPBXJhTMDdTanPzC-3B0",
-            "remixlgck": "4aee85adbf56404f4c",
-            "tmr_lvid": "cd7833d252b84c7caf4b5e74dba04921",
-            "tmr_lvidTS": "1785915853739",
-            "domain_sid": "JTvHyvnkU7hLscmAwo8wr%3A1785915854573",
-            "remixnreg_sid": "bb8f5c26a86f84f07a6a62e03ecf99a7"
-        }
-        data = {
-                "lang": "0",
-                "v": "5.83",
-                "app_id": "0",
+            # Нормализуем номер
+            phone = self._normalize_phone(phone)
+
+            # Параметры запроса (публичные, без токена)
+            restore_session_id = "" # session_id постоянно меняется. Нужно попробовать через selenium добиться подобных запросов
+            cookies = ""
+
+            headers = {
+              'Host': 'api.vk.ru',
+              'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0',
+              'Accept': '*/*',
+              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Accept-Encoding': 'gzip, deflate, br, zstd',
+              'Referer': 'https://id.vk.ru/',
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'Origin': 'https://id.vk.ru',
+              'Connection': 'keep-alive',
+              'Cookie': cookies,
+              'Sec-Fetch-Dest': 'empty',
+              'Sec-Fetch-Mode': 'cors',
+              'Sec-Fetch-Site': 'same-site',
+              'host': 'api.vk.ru'
+            }
+            data = {
+                "lang": 0,
+                "v": 5.83,
+                "app_id": 0,
                 "device_id": "JBuFiTjz5kamwggP8z2xB",
-                "unauth_id": "3326488608",
-                "restore_session_id": "1GgQIzceW9oA3N12bDNhb0pIApLHDVdDBZs6cz054Az",
+                "unauth_id": 3326488608,
+                "restore_session_id": restore_session_id,
                 "history[]": "reset",
                 "platform": "vkcom",
-                "phone": "+79229018613",
-                "vkui": "1"
+                "phone": phone,
+                "vkui": 1
             }
-        async with aiohttp.ClientSession() as session:
+
+            session_meneger = VKSessionManager(headless=True)
+
+            # к сожадению так можно будет сделать 5 раз потом будет просить посторить попытку через 24 часа
+            # как вариант проксировать с разных устройств но на каждое устройство будет по 5 попыток
+            # можно продолжить кидать запросы по истечению часа не на 24 часа. поэтому постоянно меняя сервера можно добиться постоянной работы
+            result  = session_meneger.check_registration_number_result(phone)
+            if result.get("not_founded", True):
+                return {
+                    "success": True,
+                    "registered": False,
+                    "message": "Номер не зарегистрирован в VK"
+                }
+            if not(result.get("result_checking", False)) and result.get("not_founded", False):
+                return {
+                    "success": False,
+                    "registered": False,
+                    "message": "Не удалось проскрапить"
+                }
+
+            not_exists_number  = result.get("result_checking", False)
+            if not_exists_number:
+                return {
+                    "success": True,
+                    "registered": False,
+                    "message": "Номер не зарегистрирован в VK"
+                }
+            else:
+                return {
+                    "success": True,
+                    "registered": True,
+                    "message": "Номер телефона зарегистрирован в VK"
+                }
+            # не хватало  restore_session_id решил пока закрыть глаза по приказу нача
+            async with aiohttp.ClientSession() as session:
                 try:
-                    async with session.post(
-                        url,
-                        data=data,
-                        headers=headers,
-                        cookies=cookies
-                    ) as response:
 
-                        # Получаем ответ
-                        response_text = await response.text()
+                    dict_cookies_and_restore_id = session_meneger.get_browser_restore_session_id_and_cookies()
 
-                        # Проверяем статус
-                        if response.status != 200:
-                            return {
-                                "success": False,
-                                "error": f"HTTP {response.status}",
-                                "raw_response": response_text
-                            }
+                    data["restore_session_id"] = dict_cookies_and_restore_id["restore_session_id"]
+                    headers["Cookie"] = dict_cookies_and_restore_id["cookies"]
+                    logger.info(f"найдены: {dict_cookies_and_restore_id["restore_session_id"]}, {dict_cookies_and_restore_id["cookies"]}")
+                    logger.info("далее будем с ними делать пост запрос")
+                    return {}
+                    async with session.post(url, data=data, headers=headers, timeout=15) as response:
+                        result = await response.json()
 
-                        # Парсим JSON
-                        try:
-                            result = json.loads(response_text)
-                        except json.JSONDecodeError:
-                            return {
-                                "success": False,
-                                "error": "Invalid JSON response",
-                                "raw_response": response_text
-                            }
+                        if "response" in result:
+                            response_data = result["response"]
 
-                        # Проверяем наличие ошибки в ответе API
-                        if "error" in result:
-                            error_msg = result["error"].get("error_msg", "Unknown error")
-                            error_code = result["error"].get("error_code")
-
-                            # Капча
-                            if "captcha_sid" in result["error"]:
+                            if phone in response_data:
                                 return {
-                                    "success": False,
-                                    "error": error_msg,
-                                    "error_code": error_code,
-                                    "captcha_required": True,
-                                    "captcha_sid": result["error"]["captcha_sid"],
-                                    "captcha_img": result["error"].get("captcha_img")
+                                    "success": True,
+                                    "registered": True,
+                                    "user_id": response_data[phone],
+                                    "message": "Номер зарегистрирован в VK"
+                                }
+                            else:
+                                return {
+                                    "success": True,
+                                    "registered": False,
+                                    "message": "Номер не зарегистрирован в VK"
                                 }
 
+                        if "error" in result:
+                            # Если ошибка - возможно номер не найден
                             return {
                                 "success": False,
-                                "error": error_msg,
-                                "error_code": error_code,
-                                "raw_response": response_text
+                                "registered": False,
+                                "error": result["error"].get("error_msg", "Unknown error"),
+                                "raw": result
                             }
 
-                        # Успешный ответ
                         return {
-                            "success": True,
-                            "data": result.get("response", {}),
-                            "raw_response": response_text
+                            "success": False,
+                            "registered": False,
+                            "error": "Unknown response format",
+                            "raw": result
                         }
 
-                except aiohttp.ClientError as e:
-                    return {
-                        "success": False,
-                        "error": f"Network error: {str(e)}"
-                    }
-                except asyncio.TimeoutError:
-                    return {
-                        "success": False,
-                        "error": "Request timeout"
-                    }
                 except Exception as e:
                     return {
                         "success": False,
-                        "error": f"Unexpected error: {str(e)}"
+                        "registered": False,
+                        "error": str(e)
                     }
+
+    @staticmethod
+    def _normalize_phone(phone: str) -> str:
+        """Нормализация номера телефона"""
+            # Убираем все кроме цифр
+        cleaned = re.sub(r'[^\d]', '', phone)
+
+            # Если начинается с 8, заменяем на 7
+        if cleaned.startswith('8'):
+                cleaned = '7' + cleaned[1:]
+
+        if not cleaned.startswith('7'):
+            cleaned = '7' + cleaned
+
+        return cleaned
+
 
     async def check_phone_all_services(
         self,
@@ -523,21 +529,6 @@ class NumberService:
 
     # ============= УТИЛИТЫ =============
 
-    @staticmethod
-    def _normalize_phone(phone: str) -> str:
-        """Нормализация номера телефона"""
-        # Удаляем все не-цифры
-        digits = ''.join(filter(str.isdigit, phone))
-
-        # Если номер начинается с 8, заменяем на +7 (Россия)
-        if digits.startswith('8') and len(digits) == 11:
-            digits = '7' + digits[1:]
-
-        # Добавляем + если нет
-        if not phone.startswith('+'):
-            phone = '+' + digits
-
-        return phone
 
     @staticmethod
     def _detect_country(phone: str) -> str:
