@@ -20,7 +20,7 @@ class EmailService:
         self.executor = ThreadPoolExecutor(max_workers=10)
 
 
-    async def check_email_registration(self, email: str) -> dict:
+    async def check_email_registration(self, email: str, proxys:  Dict[str, Dict]) -> dict:
             """
             Проверка регистрации номера в VK (публичный эндпоинт, без авторизации)
             """
@@ -33,7 +33,7 @@ class EmailService:
                     "message": "Email не валидный"
                 }
 
-            session_meneger = VKSessionManager(headless=True)
+            session_meneger = VKSessionManager(headless=True, proxys=proxys)
             # к сожадению так можно будет сделать 5 раз потом будет просить посторить попытку через 24 часа
             # как вариант проксировать с разных устройств но на каждое устройство будет по 5 попыток
             # можно продолжить кидать запросы по истечению часа не на 24 часа. поэтому постоянно меняя сервера можно добиться постоянной работы
@@ -51,7 +51,11 @@ class EmailService:
                     "message": "Email зарегистрирован в VK"
                  }
 
-    async def check_registration_email_sites_external_source(self, data: RequestSearchRegistration):
+    # деделать proxy для обращение к внешним ресурсам
+
+    async def check_registration_email_sites_external_source(self, data: RequestSearchRegistration, proxys:  Dict[str, Dict]):
+        #proxys необходимо разработать подключение к proxys как в check_email_registration
+        _ = proxys
         """
         Проверка регистрации email на сторонних сайтах
         """

@@ -39,134 +39,38 @@ class NumberService:
         }
 
 
-    async def check_phone_registration(self, phone: str) -> dict:
+    async def check_phone_registration(self, phone: str, proxys: Dict[str, Dict]) -> dict:
             """
             Проверка регистрации номера в VK (публичный эндпоинт, без авторизации)
             """
-            # Публичный URL для проверки номера
-            url = "https://api.vk.ru/method/account.lookupContacts"
-
             # Нормализуем номер
             phone = self._normalize_phone(phone)
-
-            # Параметры запроса (публичные, без токена)
-            restore_session_id = "" # session_id постоянно меняется. Нужно попробовать через selenium добиться подобных запросов
-            cookies = ""
-
-            headers = {
-              'Host': 'api.vk.ru',
-              'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0',
-              'Accept': '*/*',
-              'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-              'Accept-Encoding': 'gzip, deflate, br, zstd',
-              'Referer': 'https://id.vk.ru/',
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'Origin': 'https://id.vk.ru',
-              'Connection': 'keep-alive',
-              'Cookie': cookies,
-              'Sec-Fetch-Dest': 'empty',
-              'Sec-Fetch-Mode': 'cors',
-              'Sec-Fetch-Site': 'same-site',
-              'host': 'api.vk.ru'
-            }
-            data = {
-                "lang": 0,
-                "v": 5.83,
-                "app_id": 0,
-                "device_id": "JBuFiTjz5kamwggP8z2xB",
-                "unauth_id": 3326488608,
-                "restore_session_id": restore_session_id,
-                "history[]": "reset",
-                "platform": "vkcom",
-                "phone": phone,
-                "vkui": 1
-            }
-
-            session_meneger = VKSessionManager(headless=True)
+            session_meneger = VKSessionManager(headless=False, proxys=proxys)
 
             # к сожадению так можно будет сделать 5 раз потом будет просить посторить попытку через 24 часа
             # как вариант проксировать с разных устройств но на каждое устройство будет по 5 попыток
             # можно продолжить кидать запросы по истечению часа не на 24 часа. поэтому постоянно меняя сервера можно добиться постоянной работы
-            result  = session_meneger.check_registration_number_result(phone)
-            if result.get("not_founded", True):
-                return {
-                    "success": True,
-                    "registered": False,
-                    "message": "Номер не зарегистрирован в VK"
-                }
-            if not(result.get("result_checking", False)) and result.get("not_founded", False):
+
+            result = session_meneger.check_registration_number_result(phone)
+            if result.get("not_defined", False):
                 return {
                     "success": False,
                     "registered": False,
                     "message": "Не удалось проскрапить"
                 }
 
-            not_exists_number  = result.get("result_checking", False)
-            if not_exists_number:
-                return {
-                    "success": True,
-                    "registered": False,
-                    "message": "Номер не зарегистрирован в VK"
-                }
-            else:
+            if result.get("registration", False):  # Если True - номер зарегистрирован
                 return {
                     "success": True,
                     "registered": True,
                     "message": "Номер телефона зарегистрирован в VK"
                 }
-            # не хватало  restore_session_id решил пока закрыть глаза по приказу нача
-            async with aiohttp.ClientSession() as session:
-                try:
-
-                    dict_cookies_and_restore_id = session_meneger.get_browser_restore_session_id_and_cookies()
-
-                    data["restore_session_id"] = dict_cookies_and_restore_id["restore_session_id"]
-                    headers["Cookie"] = dict_cookies_and_restore_id["cookies"]
-                    logger.info(f"найдены: {dict_cookies_and_restore_id["restore_session_id"]}, {dict_cookies_and_restore_id["cookies"]}")
-                    logger.info("далее будем с ними делать пост запрос")
-                    return {}
-                    async with session.post(url, data=data, headers=headers, timeout=15) as response:
-                        result = await response.json()
-
-                        if "response" in result:
-                            response_data = result["response"]
-
-                            if phone in response_data:
-                                return {
-                                    "success": True,
-                                    "registered": True,
-                                    "user_id": response_data[phone],
-                                    "message": "Номер зарегистрирован в VK"
-                                }
-                            else:
-                                return {
-                                    "success": True,
-                                    "registered": False,
-                                    "message": "Номер не зарегистрирован в VK"
-                                }
-
-                        if "error" in result:
-                            # Если ошибка - возможно номер не найден
-                            return {
-                                "success": False,
-                                "registered": False,
-                                "error": result["error"].get("error_msg", "Unknown error"),
-                                "raw": result
-                            }
-
-                        return {
-                            "success": False,
-                            "registered": False,
-                            "error": "Unknown response format",
-                            "raw": result
-                        }
-
-                except Exception as e:
-                    return {
-                        "success": False,
-                        "registered": False,
-                        "error": str(e)
-                    }
+            else:
+                return {
+                    "success": True,
+                    "registered": False,
+                    "message": "Номер не зарегистрирован в VK"
+                }
 
     @staticmethod
     def _normalize_phone(phone: str) -> str:

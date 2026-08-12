@@ -23,10 +23,12 @@ def get_email_repository() -> EmailRepository:
           _repo_instance_email = EmailRepository()
     return _repo_instance_email
 
+
 def get_number_service(
     repo: NumberRepository = Depends(get_number_repository),
 ) -> NumberService:
     """Провайдер сервиса (внедряет репозиторий)"""
+
     return NumberService(repo)
 
 def get_email_service(
@@ -34,13 +36,14 @@ def get_email_service(
 ) -> EmailService:
     return EmailService(repo)
 
-def get_common_db()->CommonRepository:
+def get_common_repository()-> CommonRepository:
     global _repo_instance_common
     if _repo_instance_common is None:
         _repo_instance_common = CommonRepository()
     return _repo_instance_common
 
 def get_common_service(
-    repo: CommonRepository = Depends(get_common_db)
-)-> CommonService:
+    repo: CommonRepository = Depends(get_common_repository),
+) -> CommonService:
+    """Провайдер сервиса (внедряет репозиторий)"""
     return CommonService(repo)
