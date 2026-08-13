@@ -1,10 +1,12 @@
-from route.repositories.database.common import CommonRepository
+from route.repositories.database.redis import CommonRepository
 from concurrent.futures import ThreadPoolExecutor
 import aiohttp
 from typing import List,Dict, Optional
 from enum import Enum
 from schemas.object_search import AnswerProxy ,Protocol
 from aiohttp_socks import ProxyConnector
+from schemas.object_search import RequestSearchEngine, ResponsResultsSearchEngine,\
+NameEngine,ResultSearchEngine
 import time
 
 class ProxySites(str, Enum):
@@ -19,8 +21,6 @@ class CommonService:
         self.repo = repo
         self.executor = ThreadPoolExecutor(max_workers=10)
         self.request_on_sites_proxy: Dict[str, Dict] = {}
-
-
 
     """
     Этот метод создан для специально для sheduler.
@@ -114,3 +114,112 @@ class CommonService:
                         "count_of_calls": 0
                     }
         return self.request_on_sites_proxy
+
+
+    async def search_personal_data_in_search_engine(self, data_req: RequestSearchEngine):
+        """
+        Проверка утечки информации о email в поисковых движках
+        """
+        result_url = "http://127.0.0.1:7000/mega/search?"
+
+        # Получаем активные движки
+        if data_req.engins is None:
+            default_engines = NameEngine(
+                google=1,
+                yandex=1,
+                baidu=1,
+                bing=1,
+                duckduckgo=1,
+                ecosia=1
+            )
+            data = default_engines.model_dump()
+        else:
+            data = data_req.engins.model_dump()
+
+        active_engines = [name for name, val in data.items() if val == 1]
+
+        if not active_engines:
+            return ResponsResultsSearchEngine(
+                results=None,
+                count=0,
+                lead_time=0
+            )
+
+        engines_str = ",".join(active_engines)
+        result_url += f"engines={engines_str}"
+        result_url += f"&mode=balanced"
+        result_url += f"&limit={data_req.limit}"
+        result_url += f"&text={data_req.text}"
+
+        result_time = 0
+        start_time = time.time()
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(result_url) as response:
+                result_time = time.time() - start_time
+                response_data = await response.json()
+
+                results = self._parse_search_results(response_data)
+
+                count = len(results)
+
+                return ResponsResultsSearchEngine(
+                    results=results,
+                    count=count,
+                    lead_time=result_time
+                )
+
+
+    def _parse_search_results(self, response_data: dict) -> List[ResultSearchEngine]:
+        """
+        Парсит JSON ответ от поискового сервиса и преобразует в список ResultSearchEngine
+        """
+        results = []
+
+        items = response_data.get('results', [])
+
+        engine_errors = response_data.get('meta', {}).get('engine_errors', [])
+        engine_errors_dict = {err.get('engine'): err.get('error') for err in engine_errors}
+
+        engines_responded = response_data.get('meta', {}).get('engines_responded', [])
+
+        engines_failed = response_data.get('meta', {}).get('engines_failed', [])
+
+        for item in items:
+            title = item.get('title', '')
+            snippet = item.get('snippet', '')
+
+            description = f"URL: {item.get('url', '')}\nDomain: {item.get('domain', '')}"
+
+            summary = f"{title}: {snippet}" if title and snippet else title or snippet or "No summary available"
+
+            engine = item.get('engine', '')
+            error = None
+
+            if engine in engines_failed:
+                error = engine_errors_dict.get(engine, f"Engine {engine} failed")
+
+            elif engine not in engines_responded:
+                error = f"Engine {engine} did not respond"
+
+            result = ResultSearchEngine(
+                title=title,
+                snippet=snippet,
+                description=description,
+                summary=summary,
+                error=error
+            )
+            results.append(result)
+
+        for engine in engines_failed:
+            error_message = engine_errors_dict.get(engine, f"Engine {engine} failed")
+            result = ResultSearchEngine(
+                title=f"Error: {engine}",
+                snippet="",
+                description="",
+                summary=f"Search engine '{engine}' failed: {error_message}",
+                error=error_message
+            )
+            results.append(result)
+
+        return results

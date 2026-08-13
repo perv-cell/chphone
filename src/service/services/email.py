@@ -1,21 +1,19 @@
 from fastapi import HTTPException, status
 from fastapi.param_functions import Depends
-from route.repositories.database.email import EmailRepository
+from route.repositories.database.postgres import PostgresRepositories
 from concurrent.futures import ThreadPoolExecutor
-from route.repositories.models import ServiceType
-from typing import Dict, Optional, Any, List
-from route.repositories.models import PhoneNumber
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict
 import aiohttp
 from service.services.utils.services.restore_service import VKRestoreService
 from service.services.utils.services.session_manager import VKSessionManager
-from schemas.object_search import RequestSearchBreachesEmail, ResponceSearchBreachesEmail, RequestSearchRegistration , ResponseSearchRegistration
+from schemas.object_search import RequestSearchBreachesEmail, ResponceSearchBreachesEmail, RequestSearchRegistration ,\
+ResponseSearchRegistration, RequestSearchEngine, ResponsResultsSearchEngine
 from holehe.core import import_submodules, get_functions
 import asyncio
 import re
 
 class EmailService:
-    def __init__(self, repo:EmailRepository):
+    def __init__(self, repo:PostgresRepositories):
         self.repo = repo
         self.executor = ThreadPoolExecutor(max_workers=10)
 

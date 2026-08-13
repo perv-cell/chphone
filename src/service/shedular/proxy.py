@@ -1,7 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from contextlib import asynccontextmanager
-from service.depends import get_common_service, get_common_repository
+from service.depends import get_common_service, get_redis_repository
 from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -12,7 +12,7 @@ logger = logging.getLogger("shedular.proxy")
 
 async def fetch_and_save_proxies():
     try:
-        repo_proxy = get_common_repository()
+        repo_proxy = get_redis_repository()
         proxy_service = get_common_service(repo_proxy)
         proxys = await proxy_service.checking_work_proxy()
         await proxy_service.save_works_proxys(proxys)
