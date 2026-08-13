@@ -1,6 +1,3 @@
-# chphone
-Registration verification and contact information search
-
-
-This project uses phone numbers and email addresses to verify user registration on specific web resources.
-It also collects phone number and email information from third-party services.
+<h1 align="center">Hi there, I'm <a href="https://daniilshat.ru/" target="_blank">Daniil</a> 
+<img src="https://github.com/blackcater/blackcater/raw/main/images/Hi.gif" height="32"/></h1>
+<h3 align="center">Computer science student, IT news writer from Russia 🇷🇺</h3>
